@@ -1,0 +1,97 @@
+:root, [data-theme="dark"] {
+  color-scheme:dark;
+  --bg:#0b1118; --panel:#111a24; --line:#223042; --text:#d7e2ee; --muted:#7d90a5; --hi:#3dff8b; --lo:#3f5670; --bad:#ff5d6c; --accent:#4aa3ff;
+  --field:#0a1017; --btn:#1a2736; --stage:#0a1118; --grid:#16212d; --surface:#142234; --surface-hover:#1d3148; --stroke:#9fb6cc;
+  --gname:#8aa3bb; --val-lo:#5f7893; --lamp-hi:#10361f; --err-bg:#2a1219; --err-line:#6b2433; --err-text:#ff9aa5; --warn:#ffc857; --on-accent:#04121f;
+}
+[data-theme="light"] {
+  color-scheme:light;
+  --bg:#f3f6fa; --panel:#ffffff; --line:#d3dce6; --text:#17212b; --muted:#5b6b7c; --hi:#0a9d4a; --lo:#9aa9b9; --bad:#d6283b; --accent:#1769d1;
+  --field:#f7f9fc; --btn:#eef2f7; --stage:#fafcff; --grid:#e4eaf1; --surface:#ffffff; --surface-hover:#e8f0fb; --stroke:#4a5d72;
+  --gname:#5b6b7c; --val-lo:#7b8da0; --lamp-hi:#d9f5e5; --err-bg:#fdecee; --err-line:#f1b3bb; --err-text:#a31f2f; --warn:#b97900; --on-accent:#ffffff;
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; display:flex; flex-direction:column; height:100vh; }
+button { font:inherit; color:var(--text); background:var(--btn); border:1px solid var(--line); padding:7px 14px; border-radius:6px; cursor:pointer; }
+button:hover:not(:disabled) { border-color:var(--accent); }
+button:disabled { opacity:.45; cursor:not-allowed; }
+button.primary { background:var(--accent); color:var(--on-accent); border-color:var(--accent); font-weight:600; }
+.topbar { display:flex; gap:20px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
+.brand { font-weight:700; font-size:18px; white-space:nowrap; } .logo { color:var(--hi); }
+.formula { flex:1; display:flex; gap:8px; }
+.formula textarea { flex:1; resize:none; margin:0; font:16px ui-monospace,Menlo,monospace; color:var(--text); background:var(--field); border:1px solid var(--line); border-radius:6px; padding:8px 12px; }
+.formula textarea:focus { outline:2px solid var(--accent); border-color:transparent; }
+.error-line { margin:8px 18px 0; padding:8px 12px; background:var(--err-bg); border:1px solid var(--err-line); color:var(--err-text); border-radius:6px; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+.examples { padding:8px 18px; color:var(--muted); font-size:12px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.chip { padding:2px 10px; border-radius:12px; font-size:12px; }
+.hint { margin-left:auto; }
+.layout { flex:1; display:flex; min-height:0; }
+.stage { flex:1; position:relative; overflow:auto; background-color:var(--stage); background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px); background-size:24px 24px; }
+#circuit { padding:30px; display:inline-block; min-width:100%; }
+.empty { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); pointer-events:none; }
+.empty[hidden] { display:none; }
+.legend { position:sticky; left:0; bottom:0; padding:6px 14px; font-size:12px; color:var(--muted); background:linear-gradient(transparent,var(--stage) 60%); display:flex; align-items:center; gap:6px; }
+.legend .k { width:18px; height:3px; border-radius:2px; display:inline-block; margin-left:10px; } .k.hi { background:var(--hi); } .k.lo { background:var(--lo); }
+.tests { width:370px; border-left:1px solid var(--line); background:var(--panel); padding:16px; overflow:auto; }
+.tests h2 { margin:0 0 4px; font-size:16px; }
+.muted { color:var(--muted); font-size:12px; } a.muted { display:inline-block; margin:6px 0; }
+.file-row { display:flex; gap:8px; margin:10px 0 6px; }
+code { background:var(--field); padding:1px 5px; border-radius:4px; }
+/* svg */
+svg { display:block; }
+.wire { fill:none; stroke-width:2.5; stroke-linecap:round; }
+.wire.hi { stroke:var(--hi); filter:url(#glow); } .wire.lo { stroke:var(--lo); }
+.gbody path, .gbody g path { fill:var(--surface); stroke:var(--stroke); stroke-width:2; }
+.open { fill:none; stroke:var(--stroke); stroke-width:2; }
+.bubble { fill:var(--stage); stroke:var(--stroke); stroke-width:2; }
+.pin { stroke:var(--stroke); stroke-width:2.5; } .pin.hi { stroke:var(--hi); } .pin.lo { stroke:var(--lo); }
+.gname { font:600 10px ui-monospace,monospace; fill:var(--gname); text-anchor:middle; pointer-events:none; }
+.val { font:700 12px ui-monospace,monospace; } .val.hi { fill:var(--hi); } .val.lo { fill:var(--val-lo); }
+.node.hi { fill:var(--hi); } .node.lo { fill:var(--lo); }
+.label { fill:var(--text); font:600 14px ui-monospace,monospace; }
+.src .sw { fill:var(--surface); stroke:var(--lo); stroke-width:2; }
+.src.hi .sw { stroke:var(--hi); } .src.hi .swv { fill:var(--hi); } .src.lo .swv { fill:var(--muted); }
+.swv { font:700 15px ui-monospace,monospace; pointer-events:none; }
+.src.toggle { cursor:pointer; } .src.toggle:hover .sw { fill:var(--surface-hover); }
+.outlamp circle { stroke-width:2.5; fill:var(--surface); } .outlamp.hi circle { stroke:var(--hi); fill:var(--lamp-hi); filter:url(#glow); } .outlamp.lo circle { stroke:var(--lo); }
+.outlamp text { font:700 16px ui-monospace,monospace; } .outlamp.hi text { fill:var(--hi); } .outlamp.lo text { fill:var(--muted); }
+.outlamp .label { fill:var(--text); font-size:14px; }
+/* results */
+.case { border:1px solid var(--line); border-left-width:4px; border-radius:6px; padding:6px 10px; margin:6px 0; font-size:13px; }
+.case.fail { border-left-color:var(--bad); } .case.invalid { border-left-color:var(--warn); } 
+.case .mono { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--muted); }
+.bad { color:var(--bad); } .good { color:var(--hi); }
+h3 { font-size:13px; margin:14px 0 4px; }
+
+button.style-btn { font-weight:600; white-space:nowrap; }
+button.icon { width:36px; padding:7px 0; font-size:16px; line-height:1; }
+.examples #chips { display:contents; }
+textarea { width:100%; margin-top:8px; resize:vertical; font:13px ui-monospace,Menlo,monospace; color:var(--text); background:var(--field); border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
+textarea:focus { outline:2px solid var(--accent); border-color:transparent; }
+.status { color:var(--hi); font-weight:600; margin-top:8px; } .status:empty { display:none; }
+
+/* gate palette + canvas */
+.palette { width:176px; padding:12px; border-right:1px solid var(--line); background:var(--panel); overflow:auto; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start; }
+.palette[hidden], #canvas[hidden] { display:none; }
+.palette button { display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 2px 6px; font-size:12px; font-weight:600; cursor:pointer; background:var(--surface); }
+.palette svg { width:64px; height:36px; overflow:visible; }
+.palette svg .gbody path, .palette svg .gbody g path { fill:none; }
+.palette .tool { font:700 13px ui-monospace,monospace; height:36px; display:grid; place-items:center; color:var(--accent); }
+#canvas { min-width:100%; min-height:100%; touch-action:none; user-select:none; }
+.enode { cursor:grab; } .enode:active { cursor:grabbing; }
+.enode.sel .gbody path, .enode.sel .sw, .enode.sel .outlamp circle { stroke:var(--accent); }
+.pin-in, .pout { fill:transparent; stroke:none; cursor:crosshair; }
+.pout { cursor:crosshair; }
+.wirehit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
+.wire.sel { stroke:var(--accent); } .wire.draft { stroke:var(--accent); stroke-dasharray:6 4; filter:none; }
+[hidden] { display:none !important; }
+.palette button.active { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
+#canvas.placing, #canvas.placing .enode { cursor:copy; }
+.enode.ghost { opacity:.45; pointer-events:none; }
+.pin-dot { fill:var(--stage); stroke:var(--stroke); stroke-width:1.5; pointer-events:none; }
+.pin-in:hover + .pin-dot, .pout:hover + .pin-dot { fill:var(--accent); stroke:var(--accent); }
+.wiring .pin-in + .pin-dot { stroke:var(--accent); fill:var(--surface-hover); }
+.pin.lead { stroke:var(--stroke); }
+.wiring-rev .pout + .pin-dot { stroke:var(--accent); fill:var(--surface-hover); }
+
+#root { display:contents; }
