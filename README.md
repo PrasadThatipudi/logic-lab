@@ -13,6 +13,24 @@ deno task check        # type-check
 deno task test         # domain tests (Deno) + component tests (Vitest)
 ```
 
+## Keyboard shortcuts
+
+Press `?` in the app for the full list. Ctrl and ⌘ are interchangeable.
+
+| Key | Action |
+|---|---|
+| `/` or `Ctrl+K` | Focus the expression editor |
+| `Ctrl+Enter` | Run tests |
+| `1`–`0` | Pick a gate from the palette, then click the canvas |
+| `Esc` | Leave a text box, cancel the gate, or deselect |
+| `Delete` / `Backspace` | Delete the selected gate or wire |
+| `R` / `F2` | Rename the selected input or output |
+| `Ctrl+Z` / `Ctrl+Shift+Z` (or `Ctrl+Y`) | Undo / redo |
+| `Ctrl+D` | Duplicate the selected gate |
+| `Alt+L` / `Alt+N` | Toggle light/dark / switch notation |
+
+Plain-key shortcuts are ignored while a text box has focus.
+
 ## Layout
 
 - `src/domain/` – pure logic, no React: parser, circuit evaluation, canvas model, simulation, test-case runner

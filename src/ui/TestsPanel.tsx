@@ -28,7 +28,7 @@ export function TestsPanel({ text, onText, canRun, onRun, outcome }: Props) {
         placeholder={'A=0,B=0->Y=0\nA=1,B=1->Y=1\n# lines starting with # are ignored'}
       />
       <div className="file-row">
-        <button id="run" className="primary" disabled={!canRun} onClick={onRun}>Test</button>
+        <button id="run" className="primary" disabled={!canRun} onClick={onRun} title="Run tests (Ctrl/⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter">Test</button>
       </div>
       <div id="status" className="status" role="status">{allPassed ? 'All tests passed' : ''}</div>
       {outcome?.error && <div className="error-line" role="alert">{outcome.error}</div>}

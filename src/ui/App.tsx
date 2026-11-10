@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildCircuit } from '../domain/circuit.ts';
-import { emptyModel } from '../domain/canvas.ts';
+import { addNode, disconnect, emptyModel, PALETTE, removeNode, renameNode } from '../domain/canvas.ts';
 import { fromCircuit, toCircuit, toExpressions } from '../domain/convert.ts';
 import { convertExpression, format } from '../domain/parser.ts';
 import { parseTestFile, runTests } from '../domain/testcases.ts';
-import type { NodeType, Style } from '../domain/types.ts';
+import type { EditorNode, NodeType, Style } from '../domain/types.ts';
 import { storage, useStoredState } from '../hooks/useLocalStorage.ts';
 import { useCircuit } from '../hooks/useCircuit.ts';
-import { Canvas } from './Canvas.tsx';
+import { isTyping, useShortcuts } from '../hooks/useShortcuts.ts';
+import { Canvas, type Selection } from './Canvas.tsx';
 import { Palette } from './Palette.tsx';
+import { ShortcutsHelp } from './ShortcutsHelp.tsx';
 import { type TestOutcome, TestsPanel } from './TestsPanel.tsx';
 
 type Theme = 'dark' | 'light';
@@ -37,6 +39,9 @@ export function App() {
   });
   const [exprError, setExprError] = useState('');
   const [tool, setTool] = useState<NodeType | null>(null);
+  const [selected, setSelected] = useState<Selection>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const exprRef = useRef<HTMLTextAreaElement>(null);
   const [testsText, setTestsText] = useState('');
   const [outcome, setOutcome] = useState<TestOutcome | null>(null);
   const typing = useRef<number | undefined>(undefined);
@@ -122,6 +127,69 @@ export function App() {
   const switchLabel = `Switch to ${STYLE_LABEL[otherStyle]} notation`;
   const themeLabel = `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`;
 
+  // drop a stale selection after the model is replaced (e.g. a new expression was typed)
+  const sel = selected && (selected.kind === 'node' ? model.nodes.some((n) => n.id === selected.id) : !!model.wires[selected.index])
+    ? selected
+    : null;
+  const selectedNode = sel?.kind === 'node' ? model.nodes.find((n) => n.id === sel.id) : undefined;
+
+  const renameNodeWithPrompt = (n: EditorNode) => {
+    const name = prompt(`Rename ${n.type.toLowerCase()}`, n.name);
+    if (name === null) return;
+    try {
+      circuit.edit((m) => renameNode(m, n.id, name.trim()));
+      setExprError('');
+    } catch (e) {
+      setExprError((e as Error).message);
+    }
+    onCanvasChange();
+  };
+
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  const afterHistoryStep = (changed: boolean) => {
+    if (!changed) return;
+    setOutcome(null);
+    syncExpressionFromCanvas();
+  };
+
+  useShortcuts({
+    focusEditor: () => exprRef.current?.focus(),
+    runTests: () => { if (canRun) run(); },
+    pickGate: (i) => setTool(tool === PALETTE[i] ? null : PALETTE[i]),
+    escape: () => {
+      if (helpOpen) setHelpOpen(false);
+      else if (isTyping(document.activeElement)) (document.activeElement as HTMLElement).blur();
+      else if (tool) setTool(null);
+      else setSelected(null);
+    },
+    deleteSelection: () => {
+      if (!sel) return;
+      circuit.edit((m) => (sel.kind === 'node' ? removeNode(m, sel.id) : disconnect(m, m.wires[sel.index])));
+      setSelected(null);
+      onCanvasChange();
+    },
+    rename: () => {
+      if (selectedNode && (selectedNode.type === 'INPUT' || selectedNode.type === 'OUTPUT')) renameNodeWithPrompt(selectedNode);
+    },
+    undo: () => afterHistoryStep(circuit.undo()),
+    redo: () => afterHistoryStep(circuit.redo()),
+    duplicate: () => {
+      if (!selectedNode) return;
+      let id = -1;
+      circuit.edit((m) => {
+        const copy = addNode(m, selectedNode.type, selectedNode.x + 24, selectedNode.y + 24);
+        if (selectedNode.type === 'CONST') copy.value = selectedNode.value;
+        id = copy.id;
+      });
+      setSelected({ kind: 'node', id });
+      onCanvasChange();
+    },
+    toggleTheme,
+    toggleStyle,
+    toggleHelp: () => setHelpOpen((open) => !open),
+  });
+
   return (
     <>
       <header className="topbar">
@@ -129,8 +197,11 @@ export function App() {
         <div className="formula">
           <textarea
             id="expr"
+            ref={exprRef}
             rows={Math.min(6, Math.max(1, expr.split('\n').length))}
             aria-label="Boolean expressions, one output per line"
+            aria-keyshortcuts="/ Control+K Meta+K"
+            title="Focus with / or Ctrl/⌘+K"
             spellCheck={false}
             autoComplete="off"
             value={expr}
@@ -138,7 +209,7 @@ export function App() {
             onChange={(e) => onExprInput(e.target.value)}
           />
         </div>
-        <button type="button" id="style-toggle" className="style-btn" title={switchLabel} aria-label={switchLabel} onClick={toggleStyle}>
+        <button type="button" id="style-toggle" className="style-btn" title={`${switchLabel} (Alt+N)`} aria-label={switchLabel} onClick={toggleStyle}>
           {STYLE_LABEL[otherStyle]}
         </button>
         <button
@@ -146,10 +217,13 @@ export function App() {
           id="theme"
           className="icon"
           aria-label="Toggle light/dark mode"
-          title={themeLabel}
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={`${themeLabel} (Alt+L)`}
+          onClick={toggleTheme}
         >
           {theme === 'dark' ? '☀' : '☾'}
+        </button>
+        <button type="button" id="help" className="icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}>
+          ?
         </button>
       </header>
       {exprError && <div id="expr-error" className="error-line" role="alert">{exprError}</div>}
@@ -173,6 +247,9 @@ export function App() {
             tool={tool}
             onTool={setTool}
             edit={circuit.edit}
+            selected={sel}
+            onSelect={setSelected}
+            onRename={renameNodeWithPrompt}
             onChange={onCanvasChange}
             onError={setExprError}
           />
@@ -186,6 +263,7 @@ export function App() {
           outcome={outcome}
         />
       </main>
+      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
     </>
   );
 }

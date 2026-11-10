@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App } from './App.tsx';
 
 const expr = () => screen.getByLabelText(/Boolean expressions/) as HTMLTextAreaElement;
@@ -89,6 +89,106 @@ describe('LogicLab app', () => {
     expect(palette('NOR')).toHaveAttribute('aria-pressed', 'true');
     await user.keyboard('{Escape}');
     expect(palette('NOR')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  describe('keyboard shortcuts', () => {
+    it('picks a gate with its number key and ignores number keys while typing', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await user.keyboard('6');
+      expect(palette('NAND')).toHaveAttribute('aria-pressed', 'true');
+      await user.keyboard('0');
+      expect(palette('XNOR')).toHaveAttribute('aria-pressed', 'true');
+      await user.keyboard('0');
+      expect(palette('XNOR')).toHaveAttribute('aria-pressed', 'false');
+      await user.click(expr());
+      await user.keyboard('3');
+      expect(palette('NOT')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('focuses the editor with / and leaves it with Escape', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await user.keyboard('/');
+      expect(expr()).toHaveFocus();
+      expect(expr().value).toBe('Y = AB + BC + AC');
+      await user.keyboard('{Escape}');
+      expect(expr()).not.toHaveFocus();
+    });
+
+    it('runs tests with Ctrl+Enter from the tests box', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      type('Y = AB');
+      await waitFor(() => expect(gates('AND').length).toBe(1));
+      await user.type(screen.getByRole('textbox', { name: 'Test cases' }), 'A=1,B=1->Y=1');
+      await user.keyboard('{Control>}{Enter}{/Control}');
+      expect(screen.getByRole('status')).toHaveTextContent('All tests passed');
+    });
+
+    it('deletes, undoes and redoes a selected gate', async () => {
+      render(<App />);
+      type('Y = AB');
+      await waitFor(() => expect(gates('AND').length).toBe(1));
+      fireEvent.pointerDown(gates('AND')[0].querySelector('path, rect')!, { button: 0 });
+      fireEvent.pointerUp(canvas(), { button: 0 });
+      fireEvent.keyDown(document.body, { key: 'Delete' });
+      expect(gates('AND').length).toBe(0);
+      expect(expr().value).not.toContain('AB');
+      fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+      expect(gates('AND').length).toBe(1);
+      expect(expr().value).toBe('Y = AB');
+      fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true, shiftKey: true });
+      expect(gates('AND').length).toBe(0);
+      fireEvent.keyDown(document.body, { key: 'y', metaKey: true });
+      expect(gates('AND').length).toBe(0);
+    });
+
+    it('does not hijack text undo inside a text box', async () => {
+      render(<App />);
+      type('Y = AB');
+      await waitFor(() => expect(gates('AND').length).toBe(1));
+      expr().focus();
+      const proceeded = fireEvent.keyDown(expr(), { key: 'z', ctrlKey: true });
+      expect(proceeded).toBe(true);
+    });
+
+    it('duplicates the selected gate with Ctrl+D', async () => {
+      render(<App />);
+      type('Y = AB');
+      await waitFor(() => expect(gates('AND').length).toBe(1));
+      fireEvent.pointerDown(gates('AND')[0].querySelector('path, rect')!, { button: 0 });
+      fireEvent.pointerUp(canvas(), { button: 0 });
+      fireEvent.keyDown(document.body, { key: 'd', ctrlKey: true });
+      expect(gates('AND').length).toBe(2);
+    });
+
+    it('renames the selected input with R', async () => {
+      const prompt = vi.spyOn(globalThis, 'prompt').mockReturnValue('Q');
+      render(<App />);
+      type('Y = AB');
+      await waitFor(() => expect(gates('INPUT').length).toBe(2));
+      fireEvent.pointerDown(gates('INPUT')[0].querySelector('rect')!, { button: 0 });
+      fireEvent.pointerUp(canvas(), { button: 0 });
+      fireEvent.keyDown(document.body, { key: 'r' });
+      expect(prompt).toHaveBeenCalled();
+      expect(expr().value).toContain('Q');
+      prompt.mockRestore();
+    });
+
+    it('toggles theme and notation with Alt+L / Alt+N, and opens help with ?', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      const before = document.documentElement.dataset.theme;
+      fireEvent.keyDown(document.body, { key: '¬', code: 'KeyL', altKey: true });
+      expect(document.documentElement.dataset.theme).not.toBe(before);
+      fireEvent.keyDown(document.body, { key: 'ñ', code: 'KeyN', altKey: true });
+      expect(expr().value).toBe('Y = A AND B OR B AND C OR A AND C');
+      await user.keyboard('?');
+      expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
   });
 
   it('builds an SR latch from equations and holds its state', async () => {

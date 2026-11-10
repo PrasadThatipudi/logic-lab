@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { addNode, connect, disconnect, IN_X, inPins, OUT_X, outPin, removeNode, renameNode } from '../domain/canvas.ts';
+import { addNode, connect, IN_X, inPins, OUT_X, outPin } from '../domain/canvas.ts';
 import type { Bit, CanvasModel, EditorNode, NodeType, Signals } from '../domain/types.ts';
 import { GateShape } from './GateShape.tsx';
 
@@ -10,7 +10,7 @@ const cls = (v: Bit | undefined) => (v ? 'hi' : 'lo');
 const spot = (p: Point) => ({ x: Math.max(0, snap(p.x - 32)), y: Math.max(24, snap(p.y)) });
 
 interface Point { x: number; y: number }
-type Selection = { kind: 'node'; id: number } | { kind: 'wire'; index: number } | null;
+export type Selection = { kind: 'node'; id: number } | { kind: 'wire'; index: number } | null;
 type Drag =
   | { kind: 'wire'; fromOutput: boolean; id: number; pin: number; start: Point }
   | { kind: 'move'; id: number; dx: number; dy: number; moved: boolean };
@@ -92,16 +92,18 @@ interface Props {
   signals: Signals;
   tool: NodeType | null;
   onTool: (tool: NodeType | null) => void;
-  edit: (fn: (draft: CanvasModel) => void) => void;
+  edit: (fn: (draft: CanvasModel) => void, record?: boolean) => void;
+  selected: Selection;
+  onSelect: (selection: Selection) => void;
+  onRename: (node: EditorNode) => void;
   /** called once a user gesture has finished and the model should be synced to the expression */
   onChange: () => void;
   onError: (message: string) => void;
 }
 
-export function Canvas({ model, signals, tool, onTool, edit, onChange, onError }: Props) {
+export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSelect: setSelected, onRename, onChange, onError }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<Drag | null>(null);
-  const [selected, setSelected] = useState<Selection>(null);
   const [draft, setDraft] = useState<{ fromOutput: boolean; start: Point; end: Point } | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
 
@@ -170,8 +172,9 @@ export function Canvas({ model, signals, tool, onTool, edit, onChange, onError }
       const x = Math.max(0, snap(p.x - d.dx)), y = Math.max(24, snap(p.y - d.dy));
       const n = byId(d.id);
       if (x !== n.x || y !== n.y) {
+        const first = !d.moved;
         d.moved = true;
-        edit((m) => { const t = m.nodes.find((q) => q.id === d.id)!; t.x = x; t.y = y; });
+        edit((m) => { const t = m.nodes.find((q) => q.id === d.id)!; t.x = x; t.y = y; }, first);
       }
     }
   };
@@ -201,10 +204,7 @@ export function Canvas({ model, signals, tool, onTool, edit, onChange, onError }
     const node = (e.target as Element).closest<SVGElement>('.enode');
     const n = node && model.nodes.find((q) => q.id === Number(node.dataset.id));
     if (!n || !(n.type === 'INPUT' || n.type === 'OUTPUT')) return;
-    const name = prompt(`Rename ${n.type.toLowerCase()}`, n.name);
-    if (name === null) return;
-    attempt(() => edit((m) => renameNode(m, n.id, name.trim())));
-    onChange();
+    onRename(n);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -216,25 +216,6 @@ export function Canvas({ model, signals, tool, onTool, edit, onChange, onError }
   useEffect(() => {
     if (!tool) setCursor(null);
   }, [tool]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName ?? '')) return;
-      if (e.key === 'Escape' && tool) { onTool(null); return; }
-      if (!selected || !/^(Delete|Backspace)$/.test(e.key)) return;
-      e.preventDefault();
-      if (selected.kind === 'node') edit((m) => removeNode(m, selected.id));
-      else edit((m) => disconnect(m, m.wires[selected.index]));
-      setSelected(null);
-      onChange();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  });
-
-  // drop a stale selection after the model is replaced (e.g. a new expression was typed)
-  const live = selected && (selected.kind === 'node' ? model.nodes.some((n) => n.id === selected.id) : !!model.wires[selected.index]);
-  const sel = live ? selected : null;
 
   const ghost: EditorNode | null = tool && cursor
     ? { id: -1, type: tool, x: cursor.x, y: cursor.y, name: tool === 'INPUT' ? '?' : tool === 'OUTPUT' ? 'Y' : '', value: 0 }

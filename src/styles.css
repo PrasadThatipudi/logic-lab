@@ -95,3 +95,10 @@ textarea:focus { outline:2px solid var(--accent); border-color:transparent; }
 .wiring-rev .pout + .pin-dot { stroke:var(--accent); fill:var(--surface-hover); }
 
 #root { display:contents; }
+
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:grid; place-items:center; z-index:10; }
+.dialog { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px 24px; max-width:560px; width:calc(100% - 32px); max-height:calc(100vh - 32px); overflow:auto; }
+.dialog h2 { margin:0 0 12px; font-size:16px; }
+.dialog table { border-collapse:collapse; width:100%; margin-bottom:16px; }
+.dialog td { padding:5px 0; vertical-align:top; } .dialog td:first-child { padding-right:16px; white-space:nowrap; }
+kbd { font:12px ui-monospace,Menlo,monospace; background:var(--field); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
