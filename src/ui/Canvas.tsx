@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { addNode, connect, IN_X, inPins, OUT_X, outPin } from '../domain/canvas.ts';
+import { addNode, connect, IN_X, inPins, OUT_X, outPin, PALETTE } from '../domain/canvas.ts';
+import { type View, zoomAt } from '../domain/view.ts';
+import { gateKey } from '../hooks/useShortcuts.ts';
 import type { Bit, CanvasModel, EditorNode, NodeType, Signals } from '../domain/types.ts';
 import { GateShape } from './GateShape.tsx';
 
-const W = 2400, H = 1400, SNAP = 12;
+const SNAP = 12;
 const snap = (v: number) => Math.round(v / SNAP) * SNAP;
 const cls = (v: Bit | undefined) => (v ? 'hi' : 'lo');
 const spot = (p: Point) => ({ x: Math.max(0, snap(p.x - 32)), y: Math.max(24, snap(p.y)) });
@@ -13,7 +15,19 @@ interface Point { x: number; y: number }
 export type Selection = { kind: 'node'; id: number } | { kind: 'wire'; index: number } | null;
 type Drag =
   | { kind: 'wire'; fromOutput: boolean; id: number; pin: number; start: Point }
-  | { kind: 'move'; id: number; dx: number; dy: number; moved: boolean };
+  | { kind: 'move'; id: number; dx: number; dy: number; moved: boolean }
+  | { kind: 'pan'; x: number; y: number; pan: Point };
+
+const HIT: Partial<Record<NodeType, [number, number, number, number]>> = {
+  INPUT: [-36, -18, 86, 36],
+  CONST: [-4, -18, 54, 36],
+  OUTPUT: [-4, -24, 64, 48],
+};
+const hitBox = (t: NodeType) => HIT[t] ?? [-4, -32, 72, 64];
+const tipFor = (t: NodeType) => {
+  const i = PALETTE.indexOf(t);
+  return i < 0 ? t : `${t} · press ${gateKey(i)} to place`;
+};
 
 const wirePath = (a: Point, b: Point) => {
   const dx = Math.max(24, Math.abs(b.x - a.x) / 2);
@@ -69,7 +83,6 @@ function NodeView({ n, v, selected = false, ghost = false }: { n: EditorNode; v:
   } else {
     content = (
       <>
-        <title>{n.type}</title>
         <GateShape type={n.type} />
         {ins.map((p, k) => <line key={k} className="pin lead" x1={p.x} y1={p.y} x2={0} y2={p.y} />)}
         <line className={`pin ${cls(v)}`} x1={60} y1={0} x2={OUT_X} y2={0} />
@@ -82,6 +95,8 @@ function NodeView({ n, v, selected = false, ghost = false }: { n: EditorNode; v:
   }
   return (
     <g className={`enode${selected ? ' sel' : ''}${ghost ? ' ghost' : ''}`} data-id={n.id} data-type={n.type} transform={`translate(${n.x},${n.y})`}>
+      <title>{tipFor(n.type)}</title>
+      {!ghost && <rect className="hit" x={hitBox(n.type)[0]} y={hitBox(n.type)[1]} width={hitBox(n.type)[2]} height={hitBox(n.type)[3]} rx={8} />}
       {content}
     </g>
   );
@@ -93,6 +108,8 @@ interface Props {
   tool: NodeType | null;
   onTool: (tool: NodeType | null) => void;
   edit: (fn: (draft: CanvasModel) => void, record?: boolean) => void;
+  view: View;
+  onView: (view: View) => void;
   selected: Selection;
   onSelect: (selection: Selection) => void;
   onRename: (node: EditorNode) => void;
@@ -101,8 +118,9 @@ interface Props {
   onError: (message: string) => void;
 }
 
-export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSelect: setSelected, onRename, onChange, onError }: Props) {
+export function Canvas({ model, signals, tool, onTool, edit, view, onView, selected: sel, onSelect: setSelected, onRename, onChange, onError }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [draft, setDraft] = useState<{ fromOutput: boolean; start: Point; end: Point } | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
@@ -116,7 +134,7 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
 
   const svgPoint = (e: { clientX: number; clientY: number }): Point => {
     const r = svgRef.current!.getBoundingClientRect();
-    return { x: (Number(e.clientX) || 0) - r.left, y: (Number(e.clientY) || 0) - r.top };
+    return { x: ((Number(e.clientX) || 0) - r.left - view.pan.x) / view.zoom, y: ((Number(e.clientY) || 0) - r.top - view.pan.y) / view.zoom };
   };
 
   const attempt = (fn: () => void) => {
@@ -156,7 +174,10 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
       const p = svgPoint(e);
       drag.current = { kind: 'move', id: n.id, dx: p.x - n.x, dy: p.y - n.y, moved: false };
       setSelected({ kind: 'node', id: n.id });
-    } else setSelected(null);
+    } else {
+      setSelected(null);
+      drag.current = { kind: 'pan', x: e.clientX, y: e.clientY, pan: view.pan };
+    }
     if (drag.current) e.currentTarget.setPointerCapture?.(e.pointerId);
   };
 
@@ -164,6 +185,10 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
     const d = drag.current;
     if (!d) {
       if (tool) setCursor(spot(svgPoint(e)));
+      return;
+    }
+    if (d.kind === 'pan') {
+      onView({ zoom: view.zoom, pan: { x: d.pan.x + e.clientX - d.x, y: d.pan.y + e.clientY - d.y } });
       return;
     }
     const p = svgPoint(e);
@@ -183,6 +208,7 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
     const d = drag.current;
     if (!d) return;
     drag.current = null;
+    if (d.kind === 'pan') return;
     if (d.kind === 'wire') {
       setDraft(null);
       // a wire can start at an output and end on an input pin, or the other way round
@@ -217,12 +243,31 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
     if (!tool) setCursor(null);
   }, [tool]);
 
+  // wheel: scroll pans, pinch / Ctrl+wheel zooms around the pointer (needs a non-passive listener to stop page zoom)
+  const latest = useRef({ view, onView });
+  latest.current = { view, onView };
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { view: v, onView: set } = latest.current;
+      if (e.ctrlKey || e.metaKey) {
+        const r = el.getBoundingClientRect();
+        set(zoomAt(v, Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top));
+      } else set({ zoom: v.zoom, pan: { x: v.pan.x - e.deltaX, y: v.pan.y - e.deltaY } });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   const ghost: EditorNode | null = tool && cursor
     ? { id: -1, type: tool, x: cursor.x, y: cursor.y, name: tool === 'INPUT' ? '?' : tool === 'OUTPUT' ? 'Y' : '', value: 0 }
     : null;
 
   return (
     <div
+      ref={canvasRef}
       id="canvas"
       className={tool ? 'placing' : ''}
       onPointerDown={onPointerDown}
@@ -236,18 +281,23 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
         ref={svgRef}
         className={draft ? (draft.fromOutput ? 'wiring' : 'wiring-rev') : ''}
         xmlns="http://www.w3.org/2000/svg"
-        width={W}
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        height="100%"
         role="application"
         aria-label="Circuit canvas"
+        data-zoom={view.zoom}
       >
         <defs>
-          <filter id="glow" filterUnits="userSpaceOnUse" x={-50} y={-50} width={W + 100} height={H + 100}>
+          <filter id="glow" filterUnits="userSpaceOnUse" x={-2000} y={-2000} width={12000} height={8000}>
             <feGaussianBlur stdDeviation={2.5} result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
+          <pattern id="grid" width={24} height={24} patternUnits="userSpaceOnUse" patternTransform={`translate(${view.pan.x} ${view.pan.y}) scale(${view.zoom})`}>
+            <path className="gridline" d="M24 0H0V24" fill="none" />
+          </pattern>
         </defs>
+        <rect className="gridfill" width="100%" height="100%" fill="url(#grid)" />
+        <g id="circuit-content" transform={`translate(${view.pan.x} ${view.pan.y}) scale(${view.zoom})`}>
         {model.wires.map((w, i) => {
           const d = wirePath(outPos(w.from), pinPos(w.to, w.pin));
           const isSel = sel?.kind === 'wire' && sel.index === i ? ' sel' : '';
@@ -263,6 +313,7 @@ export function Canvas({ model, signals, tool, onTool, edit, selected: sel, onSe
           <NodeView key={n.id} n={n} v={signals.get(n.id)} selected={sel?.kind === 'node' && sel.id === n.id} />
         ))}
         {ghost && <NodeView n={ghost} v={0} ghost />}
+        </g>
       </svg>
     </div>
   );

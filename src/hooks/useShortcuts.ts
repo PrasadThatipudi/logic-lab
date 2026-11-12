@@ -11,6 +11,7 @@ export interface ShortcutActions {
   undo: () => void;
   redo: () => void;
   duplicate: () => void;
+  fit: () => void;
   toggleTheme: () => void;
   toggleStyle: () => void;
   toggleHelp: () => void;
@@ -26,6 +27,8 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: 'Ctrl/⌘+Z', action: 'Undo' },
   { keys: 'Ctrl/⌘+Shift+Z  or  Ctrl/⌘+Y', action: 'Redo' },
   { keys: 'Ctrl/⌘+D', action: 'Duplicate the selected gate' },
+  { keys: 'Ctrl/⌘+0', action: 'Fit the circuit to the screen' },
+  { keys: 'Scroll  /  drag background', action: 'Pan the canvas (Ctrl/⌘+scroll or pinch to zoom)' },
   { keys: 'Alt+L', action: 'Toggle light/dark mode' },
   { keys: 'Alt+N', action: 'Switch notation' },
   { keys: '?', action: 'Show or hide this help' },
@@ -52,6 +55,7 @@ export function matchShortcut(e: KeyboardEvent, typing: boolean): ((a: ShortcutA
     if (e.altKey) return null;
     if (key === 'k') return (a) => a.focusEditor();
     if (key === 'enter') return (a) => a.runTests();
+    if (key === '0') return (a) => a.fit();
     if (typing) return null; // leave the browser's own text undo/redo alone
     if (key === 'z') return e.shiftKey ? (a) => a.redo() : (a) => a.undo();
     if (key === 'y') return (a) => a.redo();

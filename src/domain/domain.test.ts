@@ -5,6 +5,7 @@ import { convertExpression, format } from './parser.ts';
 import { addNode, connect, emptyModel, renameNode } from './canvas.ts';
 import { simulate } from './simulate.ts';
 import { fromCircuit, toCircuit, toExpressions } from './convert.ts';
+import { bounds, fitView, zoomAt } from './view.ts';
 import type { Bit, CanvasModel, Signals } from './types.ts';
 
 const throwsLike = (fn: () => unknown, re: RegExp) => {
@@ -217,4 +218,18 @@ Deno.test('latch equations typed as an expression become a feedback circuit', ()
   assertEquals(set(0, 1), 0);
   assertEquals(set(0, 0), 0);
   throwsLike(() => fromCircuit(buildCircuit('A = A', 'words')), /only feeds back/);
+});
+
+Deno.test('fitView centres the circuit and zoomAt keeps the anchor fixed', () => {
+  const m = fromCircuit(buildCircuit('Y = AB + C', 'algebra'));
+  const view = fitView(m.nodes, 800, 500);
+  const b = bounds(m.nodes)!;
+  assert(view.zoom > 0 && view.zoom <= 1.5);
+  const left = view.pan.x + b.minX * view.zoom, right = view.pan.x + (b.minX + b.width) * view.zoom;
+  assert(Math.abs(left - (800 - right)) < 0.001);
+  assertEquals(fitView([], 800, 500).zoom, 1);
+
+  const zoomed = zoomAt(view, 2, 400, 250);
+  assertEquals((400 - zoomed.pan.x) / zoomed.zoom, (400 - view.pan.x) / view.zoom);
+  assertEquals(zoomAt({ zoom: 2.5, pan: { x: 0, y: 0 } }, 2, 0, 0).zoom, 2.5);
 });

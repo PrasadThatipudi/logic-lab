@@ -231,16 +231,19 @@ describe('LogicLab app', () => {
     expect(document.querySelectorAll('.wirehit').length).toBe(1);
   });
 
-  it('runs tests and lists only failures', async () => {
+  it('runs tests and shows a results table with a summary', async () => {
     const user = userEvent.setup();
     render(<App />);
     type('Y = AB');
     await waitFor(() => expect(gates('AND').length).toBe(1));
-    const run = screen.getByRole('button', { name: 'Test' });
+    const run = screen.getByRole('button', { name: /Run Tests/ });
     expect(run).toBeDisabled();
     await user.type(screen.getByRole('textbox', { name: 'Test cases' }), 'A=1,B=1->Y=1{Enter}A=0,B=1->Y=1');
     await act(async () => { await user.click(run); });
-    expect(screen.getByText('Failed (1)')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('1 / 2 passed');
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+    await user.click(screen.getByText('Failed (1)'));
+    expect(screen.getAllByRole('row')).toHaveLength(2);
     expect(screen.queryByText('All tests passed')).toBeNull();
     // a passing set shows the status above the results with no emoji
     const box = screen.getByRole('textbox', { name: 'Test cases' });
@@ -248,5 +251,20 @@ describe('LogicLab app', () => {
     await user.type(box, 'A=1,B=1->Y=1');
     await user.click(run);
     expect(screen.getByRole('status')).toHaveTextContent(/^All tests passed$/);
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(box).toHaveValue('');
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('zooms with the canvas controls and shows the live-build state', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    expect(screen.getByText('✓ Auto-build')).toBeInTheDocument();
+    const svg = () => document.querySelector('#canvas svg')!;
+    const before = Number(svg().getAttribute('data-zoom'));
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(Number(svg().getAttribute('data-zoom'))).toBeGreaterThan(before);
+    type('Y = A +');
+    expect(await screen.findByText('⚠ Invalid')).toBeInTheDocument();
   });
 });

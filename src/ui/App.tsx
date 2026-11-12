@@ -9,9 +9,11 @@ import { storage, useStoredState } from '../hooks/useLocalStorage.ts';
 import { useCircuit } from '../hooks/useCircuit.ts';
 import { isTyping, useShortcuts } from '../hooks/useShortcuts.ts';
 import { Canvas, type Selection } from './Canvas.tsx';
+import { downloadCircuitSvg } from './exportSvg.ts';
 import { Palette } from './Palette.tsx';
 import { ShortcutsHelp } from './ShortcutsHelp.tsx';
 import { type TestOutcome, TestsPanel } from './TestsPanel.tsx';
+import { DEFAULT_VIEW, fitView, type View, ZOOM_STEP, zoomAt } from '../domain/view.ts';
 
 type Theme = 'dark' | 'light';
 
@@ -21,8 +23,8 @@ const EXAMPLES: Record<Style, [string, string][]> = {
   words: [['NAND', 'Y = A NAND B'], ['XOR', 'Y = A XOR B'], ['Mixed', 'Y = NOT (A AND B) OR (C NOR D)'], ['Half adder', 'S = A XOR B\nC = A AND B']],
 };
 const HINTS: Record<Style, string> = {
-  algebra: "AB = AND · + = OR · ^ = XOR · ' or ! = NOT · parentheses · 0/1 · single-letter variables · one output per line",
-  words: "Operators: AND & * · OR | + · NOT ! ~ ' · NAND NOR XOR ^ XNOR · parentheses · 0/1 · one output per line",
+  algebra: "AB = AND · + = OR · ^ = XOR · ' or ! = NOT · ( ) = group",
+  words: 'AND & * · OR | + · NOT ! ~ · NAND NOR XOR XNOR · ( ) = group',
 };
 const STYLE_LABEL: Record<Style, string> = { algebra: 'AB + C', words: 'AND / OR' };
 const isStyle = (v: string): v is Style => v === 'algebra' || v === 'words';
@@ -41,6 +43,8 @@ export function App() {
   const [tool, setTool] = useState<NodeType | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [view, setView] = useState<View>(DEFAULT_VIEW);
+  const stageRef = useRef<HTMLElement>(null);
   const exprRef = useRef<HTMLTextAreaElement>(null);
   const [testsText, setTestsText] = useState('');
   const [outcome, setOutcome] = useState<TestOutcome | null>(null);
@@ -48,17 +52,29 @@ export function App() {
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
+  const fit = (nodes: EditorNode[] = circuit.current().nodes) => {
+    const el = stageRef.current;
+    if (el) setView(fitView(nodes, el.clientWidth, el.clientHeight));
+  };
+  const zoomBy = (factor: number) => {
+    const el = stageRef.current;
+    if (el) setView((v) => zoomAt(v, factor, el.clientWidth / 2, el.clientHeight / 2));
+  };
+
   // the canvas is the source of truth: typing builds it, editing it rewrites the text
   const generate = (src: string, st: Style) => {
     if (!src.trim()) {
       circuit.replace(emptyModel());
       setExprError('');
+      fit([]);
     } else {
       try {
         const values: Record<string, number> = {};
         for (const n of circuit.current().nodes) if (n.type === 'INPUT') values[n.name!] = n.value ?? 0;
-        circuit.replace(fromCircuit(buildCircuit(src, st), values));
+        const built = fromCircuit(buildCircuit(src, st), values);
+        circuit.replace(built);
         setExprError('');
+        fit(built.nodes);
       } catch (e) {
         setExprError((e as Error).message);
         return;
@@ -69,6 +85,7 @@ export function App() {
 
   useEffect(() => {
     if (!circuit.model.nodes.length) generate(expr, style);
+    else fit();
     return () => clearTimeout(typing.current);
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,6 +170,32 @@ export function App() {
     syncExpressionFromCanvas();
   };
 
+  const deleteSelection = () => {
+    if (!sel) return;
+    circuit.edit((m) => (sel.kind === 'node' ? removeNode(m, sel.id) : disconnect(m, m.wires[sel.index])));
+    setSelected(null);
+    onCanvasChange();
+  };
+  const renameSelection = () => {
+    if (selectedNode && (selectedNode.type === 'INPUT' || selectedNode.type === 'OUTPUT')) renameNodeWithPrompt(selectedNode);
+  };
+  const duplicateSelection = () => {
+    if (!selectedNode) return;
+    let id = -1;
+    circuit.edit((m) => {
+      const copy = addNode(m, selectedNode.type, selectedNode.x + 24, selectedNode.y + 24);
+      if (selectedNode.type === 'CONST') copy.value = selectedNode.value;
+      id = copy.id;
+    });
+    setSelected({ kind: 'node', id });
+    onCanvasChange();
+  };
+  const exportSvg = () => {
+    const svg = document.querySelector<SVGSVGElement>('#canvas svg');
+    if (svg) downloadCircuitSvg(svg, circuit.current().nodes);
+  };
+  const clearTests = () => { setTestsText(''); setOutcome(null); };
+
   useShortcuts({
     focusEditor: () => exprRef.current?.focus(),
     runTests: () => { if (canRun) run(); },
@@ -163,32 +206,19 @@ export function App() {
       else if (tool) setTool(null);
       else setSelected(null);
     },
-    deleteSelection: () => {
-      if (!sel) return;
-      circuit.edit((m) => (sel.kind === 'node' ? removeNode(m, sel.id) : disconnect(m, m.wires[sel.index])));
-      setSelected(null);
-      onCanvasChange();
-    },
-    rename: () => {
-      if (selectedNode && (selectedNode.type === 'INPUT' || selectedNode.type === 'OUTPUT')) renameNodeWithPrompt(selectedNode);
-    },
+    deleteSelection,
+    rename: renameSelection,
     undo: () => afterHistoryStep(circuit.undo()),
     redo: () => afterHistoryStep(circuit.redo()),
-    duplicate: () => {
-      if (!selectedNode) return;
-      let id = -1;
-      circuit.edit((m) => {
-        const copy = addNode(m, selectedNode.type, selectedNode.x + 24, selectedNode.y + 24);
-        if (selectedNode.type === 'CONST') copy.value = selectedNode.value;
-        id = copy.id;
-      });
-      setSelected({ kind: 'node', id });
-      onCanvasChange();
-    },
+    duplicate: duplicateSelection,
+    fit: () => fit(),
     toggleTheme,
     toggleStyle,
     toggleHelp: () => setHelpOpen((open) => !open),
   });
+
+  const selLabel = sel?.kind === 'wire' ? 'Wire' : selectedNode && `${selectedNode.type}${selectedNode.name ? ` ${selectedNode.name}` : ''}`;
+  const renamable = selectedNode?.type === 'INPUT' || selectedNode?.type === 'OUTPUT';
 
   return (
     <>
@@ -206,12 +236,25 @@ export function App() {
             autoComplete="off"
             value={expr}
             placeholder={style === 'algebra' ? "e.g.  Y = AB + C'" : 'e.g.  Y = (A AND B) XOR NOT C'}
+            aria-invalid={!!exprError}
             onChange={(e) => onExprInput(e.target.value)}
           />
+          <span
+            className={`live${exprError ? ' bad' : ''}`}
+            title={exprError ? 'The expression has an error' : 'The circuit rebuilds as you type'}
+          >
+            {exprError ? '⚠ Invalid' : '✓ Auto-build'}
+          </span>
         </div>
         <button type="button" id="style-toggle" className="style-btn" title={`${switchLabel} (Alt+N)`} aria-label={switchLabel} onClick={toggleStyle}>
-          {STYLE_LABEL[otherStyle]}
+          Notation ⇄ {STYLE_LABEL[otherStyle]}
         </button>
+        <div className="tools">
+          <button type="button" className="icon" aria-label="Undo" title="Undo (Ctrl/⌘+Z)" disabled={!circuit.canUndo} onClick={() => afterHistoryStep(circuit.undo())}>↶</button>
+          <button type="button" className="icon" aria-label="Redo" title="Redo (Ctrl/⌘+Y)" disabled={!circuit.canRedo} onClick={() => afterHistoryStep(circuit.redo())}>↷</button>
+          <button type="button" className="icon" aria-label="Fit to screen" title="Fit to screen (Ctrl/⌘+0)" disabled={!model.nodes.length} onClick={() => fit()}>⛶</button>
+          <button type="button" className="icon" aria-label="Export circuit as SVG" title="Export circuit as SVG" disabled={!model.nodes.length} onClick={exportSvg}>⤓</button>
+        </div>
         <button
           type="button"
           id="theme"
@@ -222,7 +265,7 @@ export function App() {
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
-        <button type="button" id="help" className="icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}>
+        <button type="button" id="help" className="icon" aria-label="Keyboard shortcuts" title="Syntax and keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}>
           ?
         </button>
       </header>
@@ -234,12 +277,15 @@ export function App() {
             <button key={label} className="chip" onClick={() => chooseExample(src)}>{label}</button>
           ))}
         </span>
-        <span className="hint" id="hint">{HINTS[style]}</span>
+        <span className="hint" id="hint">
+          <b>Syntax</b> <code>{HINTS[style]}</code>
+          <button type="button" className="link" onClick={() => setHelpOpen(true)}>All operators</button>
+        </span>
       </div>
 
       <main className="layout">
         <Palette tool={tool} onTool={setTool} />
-        <section className="stage" aria-label="Circuit">
+        <section className="stage" aria-label="Circuit" ref={stageRef}>
           {!model.nodes.length && <div id="empty" className="empty">Type an expression, or pick a gate and click here to place it.</div>}
           <Canvas
             model={model}
@@ -247,12 +293,28 @@ export function App() {
             tool={tool}
             onTool={setTool}
             edit={circuit.edit}
+            view={view}
+            onView={setView}
             selected={sel}
             onSelect={setSelected}
             onRename={renameNodeWithPrompt}
             onChange={onCanvasChange}
             onError={setExprError}
           />
+          {sel && (
+            <div className="selbar" role="toolbar" aria-label="Selection actions">
+              <span className="selname">{selLabel}</span>
+              {renamable && <button type="button" onClick={renameSelection} title="Rename (R)">Rename</button>}
+              {selectedNode && <button type="button" onClick={duplicateSelection} title="Duplicate (Ctrl/⌘+D)">Duplicate</button>}
+              <button type="button" className="danger" onClick={deleteSelection} title="Delete (Del)">Delete</button>
+            </div>
+          )}
+          <div className="zoombar" role="group" aria-label="Zoom">
+            <button type="button" className="icon" aria-label="Zoom out" title="Zoom out" onClick={() => zoomBy(1 / ZOOM_STEP)}>−</button>
+            <span className="zoomval" aria-live="polite">{Math.round(view.zoom * 100)}%</span>
+            <button type="button" className="icon" aria-label="Zoom in" title="Zoom in" onClick={() => zoomBy(ZOOM_STEP)}>+</button>
+            <button type="button" className="icon" aria-label="Fit circuit to screen" title="Fit to screen (Ctrl/⌘+0)" onClick={() => fit()}>⛶</button>
+          </div>
           <div className="legend"><span className="k hi" />HIGH (1) <span className="k lo" />LOW (0)</div>
         </section>
         <TestsPanel
@@ -260,6 +322,7 @@ export function App() {
           onText={(t) => { setTestsText(t); setOutcome(null); }}
           canRun={canRun}
           onRun={run}
+          onClear={clearTests}
           outcome={outcome}
         />
       </main>

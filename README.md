@@ -27,6 +27,7 @@ Press `?` in the app for the full list. Ctrl and ⌘ are interchangeable.
 | `R` / `F2` | Rename the selected input or output |
 | `Ctrl+Z` / `Ctrl+Shift+Z` (or `Ctrl+Y`) | Undo / redo |
 | `Ctrl+D` | Duplicate the selected gate |
+| `Ctrl+0` | Fit the circuit to the screen |
 | `Alt+L` / `Alt+N` | Toggle light/dark / switch notation |
 
 Plain-key shortcuts are ignored while a text box has focus.

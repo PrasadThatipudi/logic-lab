@@ -65,5 +65,5 @@ export function useCircuit() {
 
   const current = useCallback(() => ref.current.model, []);
 
-  return { model: state.model, signals: state.signals, edit, replace, undo, redo, current };
+  return { model: state.model, signals: state.signals, edit, replace, undo, redo, current, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
 }
